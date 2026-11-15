@@ -1,6 +1,6 @@
 // Önce ağ, olmazsa önbellek: internet varken her zaman en güncel sürüm yüklenir.
 const CACHE = 'kamp-telsizi'
-const CORE = ['./', 'index.html', 'style.css', 'app.js', 'gate-worklet.js', 'vendor/trystero.js', 'icon.svg', 'manifest.webmanifest']
+const CORE = ['./', 'index.html', 'style.css', 'app.js', 'gate-worklet.js', 'fx.js', 'fonts/plus-jakarta-sans-latin-wght-normal.woff2', 'fonts/plus-jakarta-sans-latin-ext-wght-normal.woff2', 'vendor/trystero.js', 'icon.svg', 'manifest.webmanifest']
 
 self.addEventListener('install', e => {
   self.skipWaiting()

@@ -2,136 +2,253 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Kamp Telsizi</title>
 <meta name="description" content="Arkadaşlarla oyun için hafif, düşük gecikmeli sesli sohbet">
-<meta name="theme-color" content="#14171c">
+<meta name="theme-color" content="#070b0d">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preload" href="fonts/plus-jakarta-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div id="update" class="banner hidden">
-  <span>🔄 Yeni sürüm hazır: <b id="update-ver"></b></span>
-  <button id="update-btn" class="btn small">Şimdi güncelle</button>
+
+<!-- Arka plan: gece göğü, orman, ateş ışığı, kıvılcımlar -->
+<div class="scene" aria-hidden="true">
+  <div class="sky"></div>
+  <div class="stars"></div>
+  <div class="moon"></div>
+  <div class="trees back"></div>
+  <div class="trees front"></div>
+  <div class="ground-glow"></div>
+  <canvas id="embers"></canvas>
+  <div class="vignette"></div>
 </div>
 
+<!-- Svg simgeleri -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 1 0-7 0v6A3.5 3.5 0 0 0 12 15Z"/><path d="M18.5 11.5a6.5 6.5 0 0 1-13 0M12 18v3M8.5 21h7"/></symbol>
+    <symbol id="i-mic-off" viewBox="0 0 24 24"><path d="M15.5 10V5.5a3.5 3.5 0 0 0-6.6-1.6M8.5 8.5v3a3.5 3.5 0 0 0 5.9 2.6M18.5 11.5a6.4 6.4 0 0 1-.9 3.3M5.5 11.5a6.5 6.5 0 0 0 10.4 5.2M12 18v3M8.5 21h7M3 3l18 18"/></symbol>
+    <symbol id="i-head" viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="5" height="7" rx="2"/><rect x="16" y="14" width="5" height="7" rx="2"/></symbol>
+    <symbol id="i-head-off" viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 12.6-6.5M19.6 10a8 8 0 0 1 .4 2v3"/><rect x="3" y="14" width="5" height="7" rx="2"/><path d="M16 17.5V19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3M3 3l18 18"/></symbol>
+    <symbol id="i-radio" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="13" rx="3"/><path d="M9 8 15 3M9 13h6M9 16.5h6"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></symbol>
+    <symbol id="i-leave" viewBox="0 0 24 24"><path d="M10 17l-5-5 5-5M5 12h11M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+    <symbol id="i-dice" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="15.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="8.5" cy="15.5" r="1.2" fill="currentColor"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M17 6l3 3M14.5 8.5l2 2"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M6 11l6 6 6-6M5 21h14"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/></symbol>
+  </defs>
+</svg>
+
+<!-- Ateş bileşeni şablonu (giriş ve oda ekranında kullanılır) -->
+<template id="tpl-fire">
+  <div class="campfire">
+    <div class="fire-light"></div>
+    <div class="flames">
+      <i class="flame f1"></i><i class="flame f2"></i><i class="flame f3"></i><i class="flame f4"></i><i class="flame f5"></i>
+    </div>
+    <div class="logs"><i class="log l1"></i><i class="log l2"></i><i class="stone s1"></i><i class="stone s2"></i><i class="stone s3"></i><i class="stone s4"></i></div>
+  </div>
+</template>
+
+<div id="update" class="update hidden" role="status">
+  <span class="update-dot"></span>
+  <span>Yeni sürüm hazır <b id="update-ver"></b></span>
+  <button id="update-btn" class="pill-btn">Şimdi güncelle</button>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
 <main>
-  <header>
-    <div class="brand"><img src="icon.svg" alt="" width="28" height="28"> Kamp Telsizi</div>
-    <div class="head-right">
-      <button id="install-btn" class="btn ghost small hidden">⬇ Uygulama olarak yükle</button>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icon.svg" alt="" width="30" height="30">
+      <span>Kamp Telsizi</span>
+    </div>
+    <div class="topbar-right">
+      <button id="install-btn" class="pill-btn ghost hidden"><svg><use href="#i-down"/></svg> Yükle</button>
       <span class="ver" id="ver"></span>
     </div>
   </header>
 
   <!-- GİRİŞ -->
-  <section id="lobby" class="card">
-    <h1>Odaya katıl</h1>
-    <label>Adın
-      <input id="name" maxlength="20" placeholder="ör. Emir" autocomplete="nickname">
-    </label>
-    <label>Oda kodu
-      <div class="row">
-        <input id="room" maxlength="32" placeholder="ör. kamp-ates-42" autocomplete="off">
-        <button id="rand-room" class="btn ghost" title="Rastgele oda kodu">🎲</button>
-      </div>
-    </label>
-    <p class="hint">Herkes aynı oda kodunu yazınca birbirinizi duyarsınız. Kod aynı zamanda şifredir, tahmin edilmesi zor bir şey seç.</p>
-    <button id="join" class="btn primary big">🎙 Katıl</button>
-    <p id="lobby-err" class="err"></p>
+  <section id="lobby" class="screen">
+    <div class="hero">
+      <div class="hero-fire" data-fire></div>
+      <h1 class="title"><span class="t1">Kamp</span> <span class="t2">Telsizi</span></h1>
+      <p class="tagline">Ateşin başına otur. Ormanda yalnızca arkadaşların seni duysun.</p>
+    </div>
+
+    <div class="glass lobby-card">
+      <label class="field">
+        <span class="field-label">Adın</span>
+        <span class="input-wrap">
+          <svg class="ico"><use href="#i-user"/></svg>
+          <input id="name" maxlength="20" placeholder="ör. Emir" autocomplete="nickname" spellcheck="false">
+        </span>
+      </label>
+      <label class="field">
+        <span class="field-label">Oda kodu</span>
+        <span class="input-wrap">
+          <svg class="ico"><use href="#i-key"/></svg>
+          <input id="room" maxlength="32" placeholder="ör. kamp-ates-42" autocomplete="off" spellcheck="false">
+          <button id="rand-room" class="icon-btn" type="button" title="Rastgele oda kodu"><svg><use href="#i-dice"/></svg></button>
+        </span>
+      </label>
+      <p class="hint">Herkes aynı kodu yazınca aynı ateşin başında buluşursunuz. Kod aynı zamanda odanın şifresi.</p>
+      <button id="join" class="cta">
+        <span class="cta-glow"></span>
+        <span class="cta-text">🔥 Ateşin başına otur</span>
+      </button>
+      <p id="lobby-err" class="err"></p>
+    </div>
+
+    <ul class="features">
+      <li><b>⚡</b> Düşük gecikme</li>
+      <li><b>📉</b> ~11 MB/saat</li>
+      <li><b>🔒</b> Şifreli oda</li>
+      <li><b>🎮</b> Oyun içi bas-konuş</li>
+    </ul>
   </section>
 
   <!-- ODA -->
-  <section id="call" class="hidden">
-    <div class="card room-head">
-      <div>
-        <div class="muted-txt">Oda</div>
-        <div class="room-name" id="room-label"></div>
+  <section id="call" class="screen hidden">
+    <div class="room-bar glass">
+      <div class="room-info">
+        <span class="eyebrow">Oda</span>
+        <span class="room-name" id="room-label"></span>
       </div>
-      <div class="row">
-        <button id="copy-link" class="btn ghost small">🔗 Davet linki</button>
-        <button id="leave" class="btn danger small">Ayrıl</button>
-      </div>
+      <button id="copy-link" class="pill-btn"><svg><use href="#i-link"/></svg> Davet et</button>
     </div>
 
-    <div class="card">
-      <div id="status" class="status">Bağlanıyor…</div>
-      <ul id="peers" class="peers"></ul>
+    <div class="status-line">
+      <span class="live-dot" id="live-dot"></span>
+      <span id="status">Bağlanıyor…</span>
     </div>
 
-    <div class="card controls">
-      <button id="mute" class="btn ctrl" title="Mikrofon (M)">🎙<span>Mikrofon</span></button>
-      <button id="deafen" class="btn ctrl" title="Sağırlaştır (D)">🎧<span>Kulaklık</span></button>
-      <button id="ptt-hold" class="btn ctrl hidden" title="Basılı tut">📢<span>Bas konuş</span></button>
+    <div class="circle" id="circle">
+      <div class="circle-ring"></div>
+      <div class="circle-fire" data-fire></div>
+      <p class="alone" id="alone">Ateş yandı 🔥<br><span>Arkadaşlarını davet et</span></p>
     </div>
 
-    <details class="card" id="settings">
-      <summary>⚙ Ayarlar</summary>
+    <nav class="dock glass">
+      <button id="mute" class="dock-btn" title="Mikrofon (M)">
+        <span class="dock-ico"><svg class="on-ico"><use href="#i-mic"/></svg><svg class="off-ico"><use href="#i-mic-off"/></svg></span>
+        <span class="dock-label">Mikrofon</span>
+      </button>
+      <button id="deafen" class="dock-btn" title="Sağırlaştır (D)">
+        <span class="dock-ico"><svg class="on-ico"><use href="#i-head"/></svg><svg class="off-ico"><use href="#i-head-off"/></svg></span>
+        <span class="dock-label">Kulaklık</span>
+      </button>
+      <button id="ptt-hold" class="dock-btn hidden" title="Basılı tut ve konuş">
+        <span class="dock-ico"><svg><use href="#i-radio"/></svg></span>
+        <span class="dock-label">Bas konuş</span>
+      </button>
+      <button id="open-settings" class="dock-btn" title="Ayarlar">
+        <span class="dock-ico"><svg><use href="#i-gear"/></svg></span>
+        <span class="dock-label">Ayarlar</span>
+      </button>
+      <button id="leave" class="dock-btn danger" title="Odadan ayrıl">
+        <span class="dock-ico"><svg><use href="#i-leave"/></svg></span>
+        <span class="dock-label">Ayrıl</span>
+      </button>
+    </nav>
+  </section>
 
-      <label>Mikrofon
-        <select id="mic-select"></select>
-      </label>
-      <label id="out-wrap">Hoparlör / Kulaklık
-        <select id="out-select"></select>
-      </label>
+  <footer class="foot">
+    <a class="web-only" href="https://github.com/m-Emir2133/m-Emir2133.github.io/releases/latest" target="_blank" rel="noopener"><svg><use href="#i-down"/></svg> Windows uygulamasını indir</a>
+    <span>Ses doğrudan aranızda gider · hiçbir yere kaydedilmez</span>
+  </footer>
+</main>
 
-      <label>Konuşma modu
-        <select id="mode">
-          <option value="vad">Sesle aktif (önerilen)</option>
+<!-- AYARLAR -->
+<div id="settings" class="sheet hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+  <div class="sheet-backdrop" data-close></div>
+  <div class="sheet-panel glass">
+    <div class="sheet-head">
+      <h2 id="settings-title">Ayarlar</h2>
+      <button class="icon-btn" data-close title="Kapat"><svg><use href="#i-x"/></svg></button>
+    </div>
+
+    <div class="sheet-body">
+      <section class="group">
+        <h3>Aygıtlar</h3>
+        <label class="field"><span class="field-label">Mikrofon</span><select id="mic-select"></select></label>
+        <label class="field" id="out-wrap"><span class="field-label">Hoparlör / Kulaklık</span><select id="out-select"></select></label>
+        <label class="field">
+          <span class="field-label">Mikrofon kazancı <b><span id="gain-val"></span>%</b></span>
+          <input type="range" id="in-gain" min="50" max="300" step="10">
+        </label>
+      </section>
+
+      <section class="group">
+        <h3>Konuşma</h3>
+        <div class="seg" id="mode-seg">
+          <button data-mode="vad">🎙 Sesle aktif</button>
+          <button data-mode="ptt">📻 Bas-konuş</button>
+          <button data-mode="open">🔊 Hep açık</button>
+        </div>
+        <select id="mode" class="hidden">
+          <option value="vad">Sesle aktif</option>
           <option value="ptt">Bas-konuş</option>
           <option value="open">Hep açık</option>
         </select>
-      </label>
 
-      <div id="vad-wrap">
-        <label>Hassasiyet eşiği: <b id="thr-val"></b> dB
-          <input type="range" id="threshold" min="-80" max="-10" step="1">
-        </label>
-        <div class="meter"><div id="meter-bar"></div><div id="meter-thr"></div></div>
-        <p class="hint">Yeşil çubuk çizgiyi geçince sesin gider. Klavye/fan sesi gidiyorsa çizgiyi sağa çek.</p>
-      </div>
+        <div id="vad-wrap">
+          <label class="field">
+            <span class="field-label">Hassasiyet eşiği <b><span id="thr-val"></span> dB</b></span>
+            <input type="range" id="threshold" min="-80" max="-10" step="1">
+          </label>
+          <div class="meter"><div id="meter-bar"></div><div id="meter-thr"></div></div>
+          <p class="hint">Çubuk beyaz çizgiyi geçince sesin gider. Klavye ya da fan sesi gidiyorsa çizgiyi sağa çek.</p>
+        </div>
 
-      <div id="ptt-wrap" class="hidden">
-        <label>Bas-konuş tuşu
-          <button id="ptt-key" class="btn ghost">Space</button>
-        </label>
-        <p class="hint" id="ptt-hint">⚠ Tarayıcıda, oyun penceresi öndeyken tuş algılanamaz. Oyun içinde <b>“Sesle aktif”</b> modunu kullan ya da masaüstü uygulamasını indir.</p>
-      </div>
+        <div id="ptt-wrap" class="hidden">
+          <div class="field">
+            <span class="field-label">Bas-konuş tuşu</span>
+            <button id="ptt-key" class="key-btn">Space</button>
+          </div>
+          <p class="hint" id="ptt-hint">⚠ Tarayıcıda, oyun penceresi öndeyken tuş algılanamaz. Oyun içinde <b>“Sesle aktif”</b> modunu kullan ya da masaüstü uygulamasını indir.</p>
+        </div>
+      </section>
 
-      <label>Mikrofon kazancı: <b id="gain-val"></b>%
-        <input type="range" id="in-gain" min="50" max="300" step="10">
-      </label>
-
-      <label>Ses kalitesi / internet kullanımı
-        <select id="quality">
-          <option value="12000">Tasarruf — 12 kbps (~5 MB/saat/kişi)</option>
-          <option value="24000">Normal — 24 kbps (~11 MB/saat/kişi)</option>
-          <option value="40000">Yüksek — 40 kbps (~18 MB/saat/kişi)</option>
+      <section class="group">
+        <h3>Ses kalitesi</h3>
+        <div class="seg" id="quality-seg">
+          <button data-q="12000"><b>Tasarruf</b><small>12 kbps · ~5 MB/sa</small></button>
+          <button data-q="24000"><b>Normal</b><small>24 kbps · ~11 MB/sa</small></button>
+          <button data-q="40000"><b>Yüksek</b><small>40 kbps · ~18 MB/sa</small></button>
+        </div>
+        <select id="quality" class="hidden">
+          <option value="12000">12</option><option value="24000">24</option><option value="40000">40</option>
         </select>
-      </label>
+      </section>
 
-      <label class="check"><input type="checkbox" id="noise"> Gürültü engelleme + yankı önleme</label>
-      <label class="check"><input type="checkbox" id="sounds"> Giriş/çıkış sesleri</label>
+      <section class="group">
+        <h3>Diğer</h3>
+        <label class="switch"><input type="checkbox" id="noise"><span class="track"></span><span>Gürültü engelleme ve yankı önleme</span></label>
+        <label class="switch"><input type="checkbox" id="sounds"><span class="track"></span><span>Giriş / çıkış sesleri</span></label>
+        <label class="switch"><input type="checkbox" id="fx"><span class="track"></span><span>Görsel efektler (kıvılcım, ateş)</span></label>
+      </section>
 
-      <details class="sub">
+      <details class="group adv">
         <summary>Gelişmiş: TURN sunucusu</summary>
-        <p class="hint">Bazı internet bağlantılarında (ör. mobil hat, CGNAT) kişiler birbirine doğrudan bağlanamaz. O zaman kendi TURN sunucunu girebilirsin. Boş bırakılabilir.</p>
+        <p class="hint">Bazı bağlantılarda (mobil hat, CGNAT) kişiler birbirine doğrudan bağlanamaz. Böyle olursa kendi TURN sunucunu girebilirsin. Değişiklik bir sonraki katılışta geçerli olur.</p>
         <input id="turn-url" placeholder="turn:sunucu.com:3478">
         <div class="row">
           <input id="turn-user" placeholder="kullanıcı adı">
           <input id="turn-pass" placeholder="şifre" type="password">
         </div>
-        <p class="hint">Değişiklik bir sonraki katılışta geçerli olur.</p>
       </details>
-    </details>
-  </section>
-
-  <footer>
-    <a class="web-only" href="https://github.com/m-Emir2133/m-Emir2133.github.io/releases/latest" target="_blank" rel="noopener">⬇ Windows uygulamasını indir</a>
-    · Sesler doğrudan sizin aranızda gider (P2P), sunucuya kaydedilmez.
-  </footer>
-</main>
+    </div>
+  </div>
+</div>
 
 <script type="module" src="app.js"></script>
 </body>

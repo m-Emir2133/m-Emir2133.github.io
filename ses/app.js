@@ -1,4 +1,5 @@
 import { joinRoom } from './vendor/trystero.js'
+import { setFx, setOrigin, setBoost } from './fx.js'
 
 const APP_ID = 'kamp-telsizi-v1'
 const WEB_URL = 'https://m-emir2133.github.io/ses/'
@@ -15,7 +16,7 @@ const store = {
 }
 const S = Object.assign({
   name: '', room: '', mode: 'vad', threshold: -50, pttKey: 'Space', pttVk: 32, gain: 100,
-  quality: 24000, noise: true, sounds: true, mic: '', out: '',
+  quality: 24000, noise: true, sounds: true, fx: true, mic: '', out: '',
   turnUrl: '', turnUser: '', turnPass: '', vols: {}
 }, store.get('settings', {}))
 const save = () => store.set('settings', S)
@@ -52,7 +53,7 @@ async function join() {
   if (code.length < 3) return ($('lobby-err').textContent = 'Oda kodu en az 3 karakter olmalı.')
   S.name = name; S.room = code; save()
   $('join').disabled = true
-  $('join').textContent = 'Mikrofon açılıyor…'
+  setJoinText('Mikrofon açılıyor…')
   try {
     await startAudio()
   } catch (e) {
@@ -61,17 +62,16 @@ async function join() {
       ? 'Mikrofon izni verilmedi. Adres çubuğundaki kilit simgesinden izin ver.'
       : 'Mikrofon açılamadı: ' + (e && e.message || e)
     $('join').disabled = false
-    $('join').textContent = '🎙 Katıl'
+    setJoinText()
     return
   }
   history.replaceState(null, '', '#oda=' + encodeURIComponent(code))
   startRoom(code)
   syncPttKey()
-  $('lobby').classList.add('hidden')
-  $('call').classList.remove('hidden')
+  showScreen('call')
   $('room-label').textContent = code
   $('join').disabled = false
-  $('join').textContent = '🎙 Katıl'
+  setJoinText()
   renderSelf()
   fillDevices()
   updateControls()
@@ -208,7 +208,11 @@ function removePeer(id) {
   if (!p) return
   if (p.audio) { p.audio.srcObject = null; p.audio.remove() }
   try { p.src && p.src.disconnect() } catch {}
-  p.el && p.el.remove()
+  if (p.el) {
+    const el = p.el
+    el.classList.add('leaving')
+    setTimeout(() => { el.remove(); layoutSeats() }, 380)
+  }
   peers.delete(id)
 }
 
@@ -291,30 +295,49 @@ async function tickStats() {
   lastBytes = { sent, recv, t: now }
 }
 
+const dbToLvl = db => Math.max(0, Math.min(1, (db + 58) / 36))
+
 function tickLevels() {
+  let any = false
   for (const p of peers.values()) {
-    let speaking = false
-    if (p.an) {
+    let lvl = 0
+    if (p.an && !p.muted) {
       p.an.getFloatTimeDomainData(p.buf)
       let s = 0
       for (let i = 0; i < p.buf.length; i++) s += p.buf[i] * p.buf[i]
-      speaking = Math.sqrt(s / p.buf.length) > 0.008
+      const rms = Math.sqrt(s / p.buf.length)
+      lvl = rms > 0.006 ? dbToLvl(20 * Math.log10(rms)) : 0
     }
+    // yumuşak düşüş
+    p.lvl = Math.max(lvl, (p.lvl || 0) * 0.6)
+    const speaking = p.lvl > 0.08
+    if (p.el) p.el.style.setProperty('--lvl', p.lvl.toFixed(2))
     if (speaking !== p.speaking) {
       p.speaking = speaking
       p.el && p.el.classList.toggle('speaking', speaking)
     }
+    any = any || speaking
   }
+  any = any || selfSpeaking
+  $('circle').classList.toggle('active', any)
+  setBoost(any ? 1 : 0)
 }
 
+let selfSpeaking = false, selfLvl = 0
 function onLocalLevel({ level, open }) {
   gateOpen = open
   const pct = Math.max(0, Math.min(100, (level + 90) / 90 * 100))
   const bar = $('meter-bar')
   bar.style.width = pct + '%'
   bar.classList.toggle('open', open)
+  const on = open && !muted
+  selfLvl = on ? Math.max(dbToLvl(level), selfLvl * 0.6) : selfLvl * 0.5
   const self = $('peer-self')
-  self && self.classList.toggle('speaking', open && !muted)
+  if (self) {
+    self.style.setProperty('--lvl', selfLvl.toFixed(2))
+    if (on !== selfSpeaking) self.classList.toggle('speaking', on)
+  }
+  selfSpeaking = on
 }
 
 async function leave() {
@@ -325,84 +348,152 @@ async function leave() {
   room = info = null
   for (const id of [...peers.keys()]) removePeer(id)
   stopAudio()
-  $('peers').innerHTML = ''
-  $('call').classList.add('hidden')
-  $('lobby').classList.remove('hidden')
+  for (const el of document.querySelectorAll('#circle .seat')) el.remove()
+  selfSpeaking = false
+  setBoost(0)
+  closeSettings()
+  showScreen('lobby')
   lastBytes = { sent: 0, recv: 0, t: 0 }
 }
 
 // ---------- Arayüz ----------
-const colorOf = s => {
-  let h = 0
-  for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0
-  return `hsl(${h % 360} 45% 32%)`
+function showScreen(name) {
+  const call = name === 'call'
+  $('lobby').classList.toggle('hidden', call)
+  $('call').classList.toggle('hidden', !call)
+  document.body.classList.toggle('in-call', call)
+  requestAnimationFrame(() => setOrigin(document.querySelector(call ? '.circle-fire' : '.hero-fire')))
 }
 
-function makeRow(id) {
-  const li = document.createElement('li')
-  li.className = 'peer'
-  li.id = 'peer-' + id
-  li.innerHTML = `<div class="avatar"></div>
-    <div><div class="pname"></div><div class="pmeta"><span class="ping"></span><span class="icons"></span></div></div>
-    <input class="pvol" type="range" min="0" max="100" step="5" title="Ses seviyesi">`
-  return li
+function setJoinText(t) {
+  $('join').disabled = !!t
+  $('join').querySelector('.cta-text').textContent = t || '🔥 Ateşin başına otur'
+}
+
+const hueOf = s => {
+  let h = 0
+  for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0
+  return h % 360
+}
+
+const MUTE_SVG = '<svg><use href="#i-mic-off"/></svg>'
+const DEAF_SVG = '<svg><use href="#i-head-off"/></svg>'
+
+function makeSeat(id, self) {
+  const el = document.createElement('div')
+  el.className = 'seat ' + (self ? 'self' : 'peer')
+  el.id = 'peer-' + id
+  el.innerHTML = `
+    <div class="avatar-wrap"><div class="ring"></div><div class="avatar"></div><span class="badge"></span></div>
+    <div class="seat-name"></div>
+    <div class="seat-meta"></div>
+    ${self ? '' : `<div class="vol-pop"><div class="vol-head"><span>Ses seviyesi</span><b class="vol-val"></b></div>
+      <input class="pvol" type="range" min="0" max="100" step="5"></div>`}`
+  $('circle').appendChild(el)
+  return el
+}
+
+// Herkesi ateşin çevresine eşit aralıkla yerleştir; sen her zaman en alttasın
+function layoutSeats() {
+  const seats = [...document.querySelectorAll('#circle .seat:not(.leaving)')]
+  const self = seats.find(e => e.classList.contains('self'))
+  const others = seats.filter(e => e !== self)
+  const order = self ? [self, ...others] : others
+  const n = order.length
+  const R = 40
+  order.forEach((el, i) => {
+    const a = Math.PI / 2 + (i * 2 * Math.PI) / Math.max(n, 1)
+    el.style.setProperty('--x', (50 + R * Math.cos(a)).toFixed(2) + '%')
+    el.style.setProperty('--y', (50 + R * Math.sin(a)).toFixed(2) + '%')
+    const x = Math.cos(a)
+    el.classList.toggle('edge-l', x < -0.5)
+    el.classList.toggle('edge-r', x > 0.5)
+  })
+  $('alone').classList.toggle('hidden', peers.size > 0)
+}
+
+function badgeHtml(isMuted, isDeaf) {
+  return isDeaf ? DEAF_SVG : isMuted ? MUTE_SVG : ''
 }
 
 function renderSelf() {
-  let li = $('peer-self')
-  if (!li) {
-    li = makeRow('self')
-    li.querySelector('.pvol').remove()
-    $('peers').prepend(li)
-  }
-  li.querySelector('.avatar').textContent = (S.name[0] || '?').toUpperCase()
-  li.querySelector('.avatar').style.background = colorOf(S.name)
-  li.querySelector('.pname').textContent = S.name + ' (sen)'
-  li.querySelector('.icons').textContent = (muted ? '🔇 ' : '') + (deaf ? '🙉' : '')
+  let el = $('peer-self')
+  if (!el) { el = makeSeat('self', true); layoutSeats() }
+  el.style.setProperty('--hue', hueOf(S.name))
+  el.querySelector('.avatar').textContent = (S.name[0] || '?').toLocaleUpperCase('tr')
+  el.querySelector('.seat-name').textContent = S.name
+  el.querySelector('.seat-meta').textContent = 'sen'
+  const b = el.querySelector('.badge')
+  const html = badgeHtml(muted, deaf)
+  if (b.innerHTML !== html) b.innerHTML = html
+}
+
+function setRangeFill(r) {
+  const p = ((r.value - r.min) / (r.max - r.min)) * 100
+  r.style.setProperty('--p', p + '%')
 }
 
 function renderPeer(p) {
   if (!p.el) {
-    p.el = makeRow(p.id)
+    p.el = makeSeat(p.id, false)
     const vol = p.el.querySelector('.pvol')
-    vol.oninput = () => { S.vols[p.name] = +vol.value; applyVolume(p); save() }
-    $('peers').appendChild(p.el)
+    vol.oninput = () => {
+      S.vols[p.name] = +vol.value; applyVolume(p); save()
+      setRangeFill(vol)
+      p.el.querySelector('.vol-val').textContent = vol.value + '%'
+    }
+    p.el.querySelector('.vol-pop').addEventListener('click', e => e.stopPropagation())
+    p.el.addEventListener('click', e => {
+      e.stopPropagation()
+      const was = p.el.classList.contains('open')
+      document.querySelectorAll('.seat.open').forEach(s => s.classList.remove('open'))
+      p.el.classList.toggle('open', !was)
+    })
+    layoutSeats()
   }
   const el = p.el
-  el.querySelector('.avatar').textContent = (p.name[0] || '?').toUpperCase()
-  el.querySelector('.avatar').style.background = colorOf(p.name)
-  el.querySelector('.pname').textContent = p.name
+  el.style.setProperty('--hue', hueOf(p.name))
+  el.querySelector('.avatar').textContent = (p.name[0] || '?').toLocaleUpperCase('tr')
+  el.querySelector('.seat-name').textContent = p.name
   const vol = el.querySelector('.pvol')
-  if (document.activeElement !== vol) vol.value = S.vols[p.name] ?? 100
-  const ping = el.querySelector('.ping')
-  if (p.ping != null) {
-    ping.textContent = p.ping + ' ms'
-    ping.className = 'ping ' + (p.ping < 80 ? 'good' : p.ping < 180 ? 'mid' : 'bad')
-  } else {
-    ping.textContent = p.audio ? 'bağlı' : 'bağlanıyor…'
-    ping.className = 'ping'
+  if (document.activeElement !== vol) {
+    vol.value = S.vols[p.name] ?? 100
+    setRangeFill(vol)
+    el.querySelector('.vol-val').textContent = vol.value + '%'
   }
-  el.querySelector('.icons').textContent = (p.muted ? '🔇 ' : '') + (p.deaf ? '🙉' : '')
+  const meta = el.querySelector('.seat-meta')
+  if (p.ping != null) {
+    meta.textContent = p.ping + ' ms'
+    meta.className = 'seat-meta ' + (p.ping < 80 ? 'good' : p.ping < 180 ? 'mid' : 'bad')
+  } else {
+    meta.textContent = p.audio ? 'bağlı' : 'bağlanıyor'
+    meta.className = 'seat-meta'
+  }
+  const b = el.querySelector('.badge')
+  const html = badgeHtml(p.muted, p.deaf)
+  if (b.innerHTML !== html) b.innerHTML = html
 }
 
 function updateStatus(up, down) {
   const n = peers.size
-  let t = n === 0
-    ? 'Odada şimdilik yalnızsın. “Davet linki” ile arkadaşlarını çağır.'
-    : `Bağlı · ${n + 1} kişi`
-  if (n > 0 && up != null) t += ` · ↑ ${up.toFixed(0)} kbps · ↓ ${down.toFixed(0)} kbps`
+  let t = n === 0 ? 'Odada şimdilik yalnızsın' : `${n + 1} kişi ateşin başında`
+  if (n > 0 && up != null) t += ` · ↑${up.toFixed(0)} ↓${down.toFixed(0)} kbps`
   $('status').textContent = t
+  $('live-dot').classList.toggle('ok', n > 0)
+  $('alone').classList.toggle('hidden', n > 0)
 }
 
 function updateControls() {
   $('mute').classList.toggle('off', muted)
-  $('mute').querySelector('span').textContent = muted ? 'Kapalı' : 'Mikrofon'
+  $('mute').querySelector('.dock-label').textContent = muted ? 'Kapalı' : 'Mikrofon'
   $('deafen').classList.toggle('off', deaf)
-  $('deafen').querySelector('span').textContent = deaf ? 'Sağır' : 'Kulaklık'
+  $('deafen').querySelector('.dock-label').textContent = deaf ? 'Sağır' : 'Kulaklık'
   $('ptt-hold').classList.toggle('hidden', S.mode !== 'ptt')
   $('ptt-hold').classList.toggle('on', pttDown)
   $('vad-wrap').classList.toggle('hidden', S.mode !== 'vad')
   $('ptt-wrap').classList.toggle('hidden', S.mode !== 'ptt')
+  document.querySelectorAll('#mode-seg button').forEach(b => b.classList.toggle('active', b.dataset.mode === S.mode))
+  document.querySelectorAll('#quality-seg button').forEach(b => b.classList.toggle('active', +b.dataset.q === S.quality))
   renderSelf()
 }
 
@@ -428,12 +519,19 @@ function setPtt(v) {
 
 let toastTimer
 function toast(msg) {
-  const s = $('status')
-  if (!s) return
-  s.textContent = '⚠ ' + msg
+  const t = $('toast')
+  t.textContent = msg
+  t.classList.toggle('warn', !/✓/.test(msg))
+  t.classList.add('show')
   clearTimeout(toastTimer)
-  toastTimer = setTimeout(() => updateStatus(), 6000)
+  toastTimer = setTimeout(() => t.classList.remove('show'), 4500)
 }
+
+function openSettings() {
+  $('settings').classList.remove('hidden')
+  fillDevices()
+}
+function closeSettings() { $('settings').classList.add('hidden') }
 
 function beep(up) {
   if (!S.sounds || !ctx) return
@@ -487,6 +585,25 @@ function initSettings() {
   $('noise').checked = S.noise
   $('sounds').checked = S.sounds
   $('ptt-key').textContent = keyName(S.pttKey)
+  $('fx').checked = S.fx
+  $('fx').onchange = e => { S.fx = e.target.checked; save(); setFx(S.fx) }
+  for (const r of document.querySelectorAll('.sheet input[type=range]')) {
+    setRangeFill(r)
+    r.addEventListener('input', () => setRangeFill(r))
+  }
+  document.querySelectorAll('#mode-seg button').forEach(b => b.onclick = () => {
+    $('mode').value = b.dataset.mode
+    $('mode').dispatchEvent(new Event('change'))
+  })
+  document.querySelectorAll('#quality-seg button').forEach(b => b.onclick = () => {
+    $('quality').value = b.dataset.q
+    $('quality').dispatchEvent(new Event('change'))
+    updateControls()
+  })
+  $('open-settings').onclick = openSettings
+  document.querySelectorAll('#settings [data-close]').forEach(b => b.onclick = closeSettings)
+  document.addEventListener('click', () => document.querySelectorAll('.seat.open').forEach(s => s.classList.remove('open')))
+  window.addEventListener('keydown', e => { if (e.key === 'Escape') closeSettings() })
   $('turn-url').value = S.turnUrl
   $('turn-user').value = S.turnUser
   $('turn-pass').value = S.turnPass
@@ -650,6 +767,10 @@ $('install-btn').onclick = async () => {
 }
 window.addEventListener('beforeunload', () => { room && room.leave() })
 
+for (const host of document.querySelectorAll('[data-fire]')) host.appendChild($('tpl-fire').content.cloneNode(true))
 initLobby()
 initSettings()
+updateControls()
+setFx(S.fx)
+showScreen('lobby')
 initUpdates()
