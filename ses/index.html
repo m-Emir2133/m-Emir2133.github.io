@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kamp Telsizi</title>
+<meta name="description" content="Arkadaşlarla oyun için hafif, düşük gecikmeli sesli sohbet">
+<meta name="theme-color" content="#14171c">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="update" class="banner hidden">
+  <span>🔄 Yeni sürüm hazır: <b id="update-ver"></b></span>
+  <button id="update-btn" class="btn small">Şimdi güncelle</button>
+</div>
+
+<main>
+  <header>
+    <div class="brand"><img src="icon.svg" alt="" width="28" height="28"> Kamp Telsizi</div>
+    <div class="head-right">
+      <button id="install-btn" class="btn ghost small hidden">⬇ Uygulama olarak yükle</button>
+      <span class="ver" id="ver"></span>
+    </div>
+  </header>
+
+  <!-- GİRİŞ -->
+  <section id="lobby" class="card">
+    <h1>Odaya katıl</h1>
+    <label>Adın
+      <input id="name" maxlength="20" placeholder="ör. Emir" autocomplete="nickname">
+    </label>
+    <label>Oda kodu
+      <div class="row">
+        <input id="room" maxlength="32" placeholder="ör. kamp-ates-42" autocomplete="off">
+        <button id="rand-room" class="btn ghost" title="Rastgele oda kodu">🎲</button>
+      </div>
+    </label>
+    <p class="hint">Herkes aynı oda kodunu yazınca birbirinizi duyarsınız. Kod aynı zamanda şifredir, tahmin edilmesi zor bir şey seç.</p>
+    <button id="join" class="btn primary big">🎙 Katıl</button>
+    <p id="lobby-err" class="err"></p>
+  </section>
+
+  <!-- ODA -->
+  <section id="call" class="hidden">
+    <div class="card room-head">
+      <div>
+        <div class="muted-txt">Oda</div>
+        <div class="room-name" id="room-label"></div>
+      </div>
+      <div class="row">
+        <button id="copy-link" class="btn ghost small">🔗 Davet linki</button>
+        <button id="leave" class="btn danger small">Ayrıl</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div id="status" class="status">Bağlanıyor…</div>
+      <ul id="peers" class="peers"></ul>
+    </div>
+
+    <div class="card controls">
+      <button id="mute" class="btn ctrl" title="Mikrofon (M)">🎙<span>Mikrofon</span></button>
+      <button id="deafen" class="btn ctrl" title="Sağırlaştır (D)">🎧<span>Kulaklık</span></button>
+      <button id="ptt-hold" class="btn ctrl hidden" title="Basılı tut">📢<span>Bas konuş</span></button>
+    </div>
+
+    <details class="card" id="settings">
+      <summary>⚙ Ayarlar</summary>
+
+      <label>Mikrofon
+        <select id="mic-select"></select>
+      </label>
+      <label id="out-wrap">Hoparlör / Kulaklık
+        <select id="out-select"></select>
+      </label>
+
+      <label>Konuşma modu
+        <select id="mode">
+          <option value="vad">Sesle aktif (önerilen)</option>
+          <option value="ptt">Bas-konuş</option>
+          <option value="open">Hep açık</option>
+        </select>
+      </label>
+
+      <div id="vad-wrap">
+        <label>Hassasiyet eşiği: <b id="thr-val"></b> dB
+          <input type="range" id="threshold" min="-80" max="-10" step="1">
+        </label>
+        <div class="meter"><div id="meter-bar"></div><div id="meter-thr"></div></div>
+        <p class="hint">Yeşil çubuk çizgiyi geçince sesin gider. Klavye/fan sesi gidiyorsa çizgiyi sağa çek.</p>
+      </div>
+
+      <div id="ptt-wrap" class="hidden">
+        <label>Bas-konuş tuşu
+          <button id="ptt-key" class="btn ghost">Space</button>
+        </label>
+        <p class="hint">⚠ Tarayıcılar, oyun penceresi öndeyken tuşu algılayamaz. Oyun içinde <b>“Sesle aktif”</b> modunu kullan.</p>
+      </div>
+
+      <label>Mikrofon kazancı: <b id="gain-val"></b>%
+        <input type="range" id="in-gain" min="50" max="300" step="10">
+      </label>
+
+      <label>Ses kalitesi / internet kullanımı
+        <select id="quality">
+          <option value="12000">Tasarruf — 12 kbps (~5 MB/saat/kişi)</option>
+          <option value="24000">Normal — 24 kbps (~11 MB/saat/kişi)</option>
+          <option value="40000">Yüksek — 40 kbps (~18 MB/saat/kişi)</option>
+        </select>
+      </label>
+
+      <label class="check"><input type="checkbox" id="noise"> Gürültü engelleme + yankı önleme</label>
+      <label class="check"><input type="checkbox" id="sounds"> Giriş/çıkış sesleri</label>
+
+      <details class="sub">
+        <summary>Gelişmiş: TURN sunucusu</summary>
+        <p class="hint">Bazı internet bağlantılarında (ör. mobil hat, CGNAT) kişiler birbirine doğrudan bağlanamaz. O zaman kendi TURN sunucunu girebilirsin. Boş bırakılabilir.</p>
+        <input id="turn-url" placeholder="turn:sunucu.com:3478">
+        <div class="row">
+          <input id="turn-user" placeholder="kullanıcı adı">
+          <input id="turn-pass" placeholder="şifre" type="password">
+        </div>
+        <p class="hint">Değişiklik bir sonraki katılışta geçerli olur.</p>
+      </details>
+    </details>
+  </section>
+
+  <footer>
+    <a href="https://github.com/m-Emir2133/m-Emir2133.github.io" target="_blank" rel="noopener">GitHub</a>
+    · Sesler doğrudan sizin aranızda gider (P2P), sunucuya kaydedilmez.
+  </footer>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
