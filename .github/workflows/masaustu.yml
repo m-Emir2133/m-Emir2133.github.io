@@ -1,0 +1,72 @@
+name: Windows uygulaması
+
+# Her gönderimde Windows kurulum dosyası derlenir.
+# main dalında, masaustu/Cargo.toml içindeki sürüm için henüz bir Release yoksa
+# otomatik olarak yeni bir Release yayınlanır; uygulamalar bunu görüp kendini günceller.
+on:
+  push:
+    paths:
+      - 'masaustu/**'
+      - 'ses/**'
+      - '.github/workflows/masaustu.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: masaustu-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: masaustu
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Sürümü oku
+        id: ver
+        shell: bash
+        run: echo "v=$(grep -m1 '^version' masaustu/Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Derle (Tauri + NSIS kurulum dosyası)
+        working-directory: masaustu
+        run: npx --yes @tauri-apps/cli@2.12.4 build --ci
+
+      - name: Kurulum dosyasını hazırla
+        shell: bash
+        run: |
+          mkdir -p cikti
+          cp masaustu/target/release/bundle/nsis/*-setup.exe "cikti/KampTelsizi_${{ steps.ver.outputs.v }}_x64-setup.exe"
+          ls -la cikti
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KampTelsizi-${{ steps.ver.outputs.v }}
+          path: cikti/*.exe
+
+      - name: Release yayınla (yalnızca main)
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ steps.ver.outputs.v }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "$TAG zaten yayında, atlanıyor. Yeni sürüm için masaustu/Cargo.toml içindeki version'ı artır."
+            exit 0
+          fi
+          gh release create "$TAG" cikti/*.exe \
+            --title "Kamp Telsizi $TAG" \
+            --notes "Kurulum: KampTelsizi_${{ steps.ver.outputs.v }}_x64-setup.exe dosyasını indirip çalıştır. Kurulu olanlar uygulama içinden güncellenir." \
+            --latest

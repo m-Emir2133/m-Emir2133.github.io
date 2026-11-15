@@ -97,3 +97,4 @@ footer a { color: var(--dim); }
   .peer { grid-template-columns: 36px 1fr; }
   .pvol { grid-column: 1 / -1; width: 100%; }
 }
+body.app .web-only { display: none; }

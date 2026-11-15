@@ -1,6 +1,11 @@
 import { joinRoom } from './vendor/trystero.js'
 
 const APP_ID = 'kamp-telsizi-v1'
+const WEB_URL = 'https://m-emir2133.github.io/ses/'
+// Masaüstü (Tauri) uygulamasının içinde mi çalışıyoruz?
+const TAURI = window.__TAURI__
+const isApp = !!(TAURI && TAURI.core)
+const invoke = (cmd, args) => TAURI.core.invoke(cmd, args)
 const $ = id => document.getElementById(id)
 
 // ---------- Ayarlar (tarayıcıda saklanır) ----------
@@ -9,7 +14,7 @@ const store = {
   set(k, v) { try { localStorage.setItem('kt.' + k, JSON.stringify(v)) } catch {} }
 }
 const S = Object.assign({
-  name: '', room: '', mode: 'vad', threshold: -50, pttKey: 'Space', gain: 100,
+  name: '', room: '', mode: 'vad', threshold: -50, pttKey: 'Space', pttVk: 32, gain: 100,
   quality: 24000, noise: true, sounds: true, mic: '', out: '',
   turnUrl: '', turnUser: '', turnPass: '', vols: {}
 }, store.get('settings', {}))
@@ -61,6 +66,7 @@ async function join() {
   }
   history.replaceState(null, '', '#oda=' + encodeURIComponent(code))
   startRoom(code)
+  syncPttKey()
   $('lobby').classList.add('hidden')
   $('call').classList.remove('hidden')
   $('room-label').textContent = code
@@ -135,6 +141,9 @@ function stopAudio() {
 // ---------- Oda / P2P ----------
 function startRoom(code) {
   const cfg = { appId: APP_ID, password: 'kt:' + code, identity: 'none' }
+  // İsteğe bağlı: kendi eşleştirme (nostr) sunucunu kullan — ör. ?relay=wss://sunucu.com
+  const relay = new URLSearchParams(location.search).get('relay')
+  if (relay) cfg.relayConfig = { urls: relay.split(',') }
   if (S.turnUrl.trim()) {
     cfg.turnConfig = [{ urls: S.turnUrl.trim(), username: S.turnUser || undefined, credential: S.turnPass || undefined }]
   }
@@ -310,7 +319,9 @@ function onLocalLevel({ level, open }) {
 
 async function leave() {
   loops.forEach(clearInterval); loops = []
-  if (room) { try { await room.leave() } catch {} }
+  const r = room
+  room = null; syncPttKey()
+  if (r) { try { await r.leave() } catch {} }
   room = info = null
   for (const id of [...peers.keys()]) removePeer(id)
   stopAudio()
@@ -453,7 +464,17 @@ async function fillDevices() {
 }
 
 function keyName(code) {
-  return code.replace(/^Key/, '').replace(/^Digit/, '').replace(/^Numpad/, 'Num ')
+  const mouse = { Mouse1: 'Fare orta tuş', Mouse3: 'Fare yan tuş 1', Mouse4: 'Fare yan tuş 2' }
+  return mouse[code] || code.replace(/^Key/, '').replace(/^Digit/, '').replace(/^Numpad/, 'Num ')
+}
+
+// Fare tuşu -> Windows sanal tuş kodu
+const MOUSE_VK = { 1: 0x04, 3: 0x05, 4: 0x06 }
+
+// Masaüstü uygulamasında tuşu Rust tarafı izler (oyun öndeyken de çalışır)
+function syncPttKey() {
+  if (!isApp) return
+  invoke('set_ptt_key', { vk: room && S.mode === 'ptt' ? S.pttVk : 0 }).catch(() => {})
 }
 
 function initSettings() {
@@ -472,7 +493,7 @@ function initSettings() {
   const thrMark = () => ($('meter-thr').style.left = ((S.threshold + 90) / 90 * 100) + '%')
   thrMark()
 
-  $('mode').onchange = e => { S.mode = e.target.value; save(); setPtt(false); pushGate(); updateControls() }
+  $('mode').onchange = e => { S.mode = e.target.value; save(); setPtt(false); pushGate(); updateControls(); syncPttKey() }
   $('threshold').oninput = e => { S.threshold = +e.target.value; $('thr-val').textContent = S.threshold; thrMark(); save(); pushGate() }
   $('in-gain').oninput = e => { S.gain = +e.target.value; $('gain-val').textContent = S.gain; save(); pushGate() }
   $('quality').onchange = e => { S.quality = +e.target.value; save(); tickStats() }
@@ -487,14 +508,30 @@ function initSettings() {
   }
 
   let capturing = false
-  $('ptt-key').onclick = () => { capturing = true; $('ptt-key').textContent = 'Bir tuşa bas…' }
+  const setKey = (code, vk) => {
+    capturing = false
+    S.pttKey = code; S.pttVk = vk; save()
+    $('ptt-key').textContent = keyName(code)
+    $('ptt-key').blur()
+    syncPttKey()
+  }
+  $('ptt-key').onclick = () => {
+    if (capturing) return
+    setTimeout(() => { capturing = true }, 0)
+    $('ptt-key').textContent = 'Bir tuşa ya da fare yan tuşuna bas…'
+  }
+  window.addEventListener('mousedown', e => {
+    if (capturing && MOUSE_VK[e.button]) { e.preventDefault(); return setKey('Mouse' + e.button, MOUSE_VK[e.button]) }
+    if (room && S.mode === 'ptt' && S.pttKey === 'Mouse' + e.button) setPtt(true)
+  })
+  window.addEventListener('mouseup', e => { if (S.pttKey === 'Mouse' + e.button) setPtt(false) })
+  // Fare yan tuşlarının tarayıcıda geri/ileri gitmesini engelle
+  window.addEventListener('auxclick', e => { if (e.button === 3 || e.button === 4) e.preventDefault() })
   window.addEventListener('keydown', e => {
     if (capturing) {
-      e.preventDefault(); capturing = false
-      S.pttKey = e.code; save()
-      $('ptt-key').textContent = keyName(e.code)
-      $('ptt-key').blur()
-      return
+      e.preventDefault()
+      if (e.code === 'Escape') { capturing = false; $('ptt-key').textContent = keyName(S.pttKey); return }
+      return setKey(e.code, e.keyCode)
     }
     if (!room || e.repeat) return
     const typing = /INPUT|SELECT|TEXTAREA/.test(document.activeElement && document.activeElement.tagName)
@@ -504,7 +541,7 @@ function initSettings() {
     if (e.code === 'KeyD') setDeaf(!deaf)
   })
   window.addEventListener('keyup', e => { if (e.code === S.pttKey) setPtt(false) })
-  window.addEventListener('blur', () => setPtt(false))
+  if (!isApp) window.addEventListener('blur', () => setPtt(false))
 
   const hold = $('ptt-hold')
   hold.addEventListener('pointerdown', e => { hold.setPointerCapture(e.pointerId); setPtt(true) })
@@ -515,7 +552,7 @@ function initSettings() {
   $('deafen').onclick = () => setDeaf(!deaf)
   $('leave').onclick = leave
   $('copy-link').onclick = async () => {
-    const url = location.origin + location.pathname + '#oda=' + encodeURIComponent(S.room)
+    const url = (isApp ? WEB_URL : location.origin + location.pathname) + '#oda=' + encodeURIComponent(S.room)
     try { await navigator.clipboard.writeText(url); toast('Davet linki kopyalandı ✓') }
     catch { prompt('Linki kopyala:', url) }
   }
@@ -547,7 +584,47 @@ async function applyUpdate() {
   location.reload()
 }
 
+// Masaüstü: GitHub Releases'ta yeni sürüm var mı? Varsa indirip kurar, uygulama yeniden açılır.
+let appUpdate = null
+async function checkAppUpdate() {
+  try {
+    appUpdate = await invoke('check_update')
+    if (appUpdate) {
+      $('update-ver').textContent = 'v' + appUpdate.version
+      $('update').classList.remove('hidden')
+    }
+  } catch (e) { console.warn('güncelleme denetimi', e) }
+}
+
+async function applyAppUpdate() {
+  if (!appUpdate) return
+  if (room && !confirm('Güncelleme kurulurken odadan çıkacaksın, uygulama birkaç saniye içinde yeniden açılır. Devam?')) return
+  $('update-btn').disabled = true
+  $('update-btn').textContent = 'İndiriliyor…'
+  try {
+    await invoke('install_update', { url: appUpdate.url })
+  } catch (e) {
+    $('update-btn').disabled = false
+    $('update-btn').textContent = 'Tekrar dene'
+    alert('Güncelleme indirilemedi: ' + e)
+  }
+}
+
+async function initAppMode() {
+  document.body.classList.add('app')
+  const info = await invoke('app_info').catch(() => null)
+  $('ver').textContent = info ? 'v' + info.version : ''
+  if (info && info.global_ptt) {
+    $('ptt-hint').innerHTML = '✅ Oyun penceresi öndeyken de çalışır. Klavye tuşu ya da fare yan tuşu seçebilirsin.'
+  }
+  await TAURI.event.listen('ptt', e => { if (room && S.mode === 'ptt') setPtt(!!e.payload) })
+  $('update-btn').onclick = applyAppUpdate
+  checkAppUpdate()
+  setInterval(checkAppUpdate, 30 * 60 * 1000)
+}
+
 async function initUpdates() {
+  if (isApp) return initAppMode()
   try { bootVersion = await fetchVersion() } catch {}
   $('ver').textContent = bootVersion ? 'v' + bootVersion : ''
   $('update-btn').onclick = applyUpdate

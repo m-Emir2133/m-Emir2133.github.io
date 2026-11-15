@@ -1,0 +1,24 @@
+[package]
+name = "kamp-telsizi"
+version = "1.0.0"
+description = "Arkadaşlarla oyun için hafif, düşük gecikmeli sesli sohbet"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "3", default-features = false, features = ["json", "native-tls"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
