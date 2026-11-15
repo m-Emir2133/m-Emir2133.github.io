@@ -1,5 +1,4 @@
 import { joinRoom } from './vendor/trystero.js'
-import { setFx, setOrigin, setBoost } from './fx.js'
 
 const APP_ID = 'kamp-telsizi-v1'
 const WEB_URL = 'https://m-emir2133.github.io/ses/'
@@ -16,7 +15,7 @@ const store = {
 }
 const S = Object.assign({
   name: '', room: '', mode: 'vad', threshold: -50, pttKey: 'Space', pttVk: 32, gain: 100,
-  quality: 24000, noise: true, sounds: true, fx: true, mic: '', out: '',
+  quality: 24000, noise: true, sounds: true, mic: '', out: '',
   turnUrl: '', turnUser: '', turnPass: '', vols: {}
 }, store.get('settings', {}))
 const save = () => store.set('settings', S)
@@ -318,9 +317,6 @@ function tickLevels() {
     }
     any = any || speaking
   }
-  any = any || selfSpeaking
-  $('circle').classList.toggle('active', any)
-  setBoost(any ? 1 : 0)
 }
 
 let selfSpeaking = false, selfLvl = 0
@@ -350,7 +346,6 @@ async function leave() {
   stopAudio()
   for (const el of document.querySelectorAll('#circle .seat')) el.remove()
   selfSpeaking = false
-  setBoost(0)
   closeSettings()
   showScreen('lobby')
   lastBytes = { sent: 0, recv: 0, t: 0 }
@@ -362,12 +357,11 @@ function showScreen(name) {
   $('lobby').classList.toggle('hidden', call)
   $('call').classList.toggle('hidden', !call)
   document.body.classList.toggle('in-call', call)
-  requestAnimationFrame(() => setOrigin(document.querySelector(call ? '.circle-fire' : '.hero-fire')))
 }
 
 function setJoinText(t) {
   $('join').disabled = !!t
-  $('join').querySelector('.cta-text').textContent = t || '🔥 Ateşin başına otur'
+  $('join').querySelector('.cta-text').textContent = t || 'Katıl'
 }
 
 const hueOf = s => {
@@ -384,31 +378,20 @@ function makeSeat(id, self) {
   el.className = 'seat ' + (self ? 'self' : 'peer')
   el.id = 'peer-' + id
   el.innerHTML = `
-    <div class="avatar-wrap"><div class="ring"></div><div class="avatar"></div><span class="badge"></span></div>
-    <div class="seat-name"></div>
-    <div class="seat-meta"></div>
-    ${self ? '' : `<div class="vol-pop"><div class="vol-head"><span>Ses seviyesi</span><b class="vol-val"></b></div>
-      <input class="pvol" type="range" min="0" max="100" step="5"></div>`}`
+    <div class="seat-row">
+      <div class="avatar"></div>
+      <div class="seat-text"><div class="seat-name"></div><div class="seat-meta"></div></div>
+      <span class="badge"></span>
+    </div>
+    ${self ? '' : `<div class="vol-pop"><input class="pvol" type="range" min="0" max="100" step="5" aria-label="Ses seviyesi"><b class="vol-val"></b></div>`}`
   $('circle').appendChild(el)
   return el
 }
 
-// Herkesi ateşin çevresine eşit aralıkla yerleştir; sen her zaman en alttasın
+// Sen her zaman en üstte
 function layoutSeats() {
-  const seats = [...document.querySelectorAll('#circle .seat:not(.leaving)')]
-  const self = seats.find(e => e.classList.contains('self'))
-  const others = seats.filter(e => e !== self)
-  const order = self ? [self, ...others] : others
-  const n = order.length
-  const R = 40
-  order.forEach((el, i) => {
-    const a = Math.PI / 2 + (i * 2 * Math.PI) / Math.max(n, 1)
-    el.style.setProperty('--x', (50 + R * Math.cos(a)).toFixed(2) + '%')
-    el.style.setProperty('--y', (50 + R * Math.sin(a)).toFixed(2) + '%')
-    const x = Math.cos(a)
-    el.classList.toggle('edge-l', x < -0.5)
-    el.classList.toggle('edge-r', x > 0.5)
-  })
+  const self = $('peer-self')
+  if (self && self !== $('circle').firstElementChild) $('circle').prepend(self)
   $('alone').classList.toggle('hidden', peers.size > 0)
 }
 
@@ -422,7 +405,7 @@ function renderSelf() {
   el.style.setProperty('--hue', hueOf(S.name))
   el.querySelector('.avatar').textContent = (S.name[0] || '?').toLocaleUpperCase('tr')
   el.querySelector('.seat-name').textContent = S.name
-  el.querySelector('.seat-meta').textContent = 'sen'
+  el.querySelector('.seat-meta').textContent = 'Sen'
   const b = el.querySelector('.badge')
   const html = badgeHtml(muted, deaf)
   if (b.innerHTML !== html) b.innerHTML = html
@@ -476,7 +459,7 @@ function renderPeer(p) {
 
 function updateStatus(up, down) {
   const n = peers.size
-  let t = n === 0 ? 'Odada şimdilik yalnızsın' : `${n + 1} kişi ateşin başında`
+  let t = n === 0 ? 'Odada şimdilik yalnızsın' : `${n + 1} kişi bağlı`
   if (n > 0 && up != null) t += ` · ↑${up.toFixed(0)} ↓${down.toFixed(0)} kbps`
   $('status').textContent = t
   $('live-dot').classList.toggle('ok', n > 0)
@@ -485,9 +468,9 @@ function updateStatus(up, down) {
 
 function updateControls() {
   $('mute').classList.toggle('off', muted)
-  $('mute').querySelector('.dock-label').textContent = muted ? 'Kapalı' : 'Mikrofon'
+  $('mute').title = muted ? 'Mikrofonu aç (M)' : 'Mikrofonu kapat (M)'
   $('deafen').classList.toggle('off', deaf)
-  $('deafen').querySelector('.dock-label').textContent = deaf ? 'Sağır' : 'Kulaklık'
+  $('deafen').title = deaf ? 'Sesi aç (D)' : 'Sağırlaştır (D)'
   $('ptt-hold').classList.toggle('hidden', S.mode !== 'ptt')
   $('ptt-hold').classList.toggle('on', pttDown)
   $('vad-wrap').classList.toggle('hidden', S.mode !== 'vad')
@@ -585,8 +568,6 @@ function initSettings() {
   $('noise').checked = S.noise
   $('sounds').checked = S.sounds
   $('ptt-key').textContent = keyName(S.pttKey)
-  $('fx').checked = S.fx
-  $('fx').onchange = e => { S.fx = e.target.checked; save(); setFx(S.fx) }
   for (const r of document.querySelectorAll('.sheet input[type=range]')) {
     setRangeFill(r)
     r.addEventListener('input', () => setRangeFill(r))
@@ -767,10 +748,8 @@ $('install-btn').onclick = async () => {
 }
 window.addEventListener('beforeunload', () => { room && room.leave() })
 
-for (const host of document.querySelectorAll('[data-fire]')) host.appendChild($('tpl-fire').content.cloneNode(true))
 initLobby()
 initSettings()
 updateControls()
-setFx(S.fx)
 showScreen('lobby')
 initUpdates()
