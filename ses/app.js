@@ -15,13 +15,16 @@ const store = {
 }
 const S = Object.assign({
   name: '', room: '', mode: 'vad', threshold: -50, pttKey: 'Space', pttVk: 32, gain: 100,
-  quality: 24000, noise: true, sounds: true, mic: '', out: '',
+  quality: 24000, ec: true, ns: true, agc: true, master: 100, lite: false, sounds: true, mic: '', out: '',
   turnUrl: '', turnUser: '', turnPass: '', vols: {}
 }, store.get('settings', {}))
+// Eski sürümden kalan tek 'noise' ayarını yeni üç ayara aktar
+if (typeof S.noise === 'boolean') { S.ec = S.ns = S.agc = S.noise; delete S.noise }
 const save = () => store.set('settings', S)
 
 // ---------- Durum ----------
 let room = null, info = null
+let monitor = null
 let ctx = null, gate = null, micSrc = null, rawStream = null, sendStream = null
 let muted = false, deaf = false, pttDown = false, gateOpen = false
 let loops = []
@@ -78,7 +81,7 @@ async function join() {
 
 // ---------- Ses hattı: mikrofon -> kapı (worklet) -> gönderilen akış ----------
 async function openMic() {
-  const c = { echoCancellation: S.noise, noiseSuppression: S.noise, autoGainControl: S.noise, channelCount: 1 }
+  const c = { echoCancellation: S.ec, noiseSuppression: S.ns, autoGainControl: S.agc, channelCount: 1 }
   if (S.mic) c.deviceId = { exact: S.mic }
   try {
     return await navigator.mediaDevices.getUserMedia({ audio: c })
@@ -100,6 +103,11 @@ async function startAudio() {
   const dest = ctx.createMediaStreamDestination()
   dest.channelCount = 1
   gate.connect(dest)
+  // "Kendini dinle" için mikrofon çıkışını hoparlöre de verebilen düğüm
+  monitor = ctx.createGain()
+  monitor.gain.value = 0
+  gate.connect(monitor).connect(ctx.destination)
+  applyCtxSink()
   micSrc = ctx.createMediaStreamSource(rawStream)
   micSrc.connect(gate)
   sendStream = dest.stream
@@ -134,7 +142,8 @@ function stopAudio() {
   rawStream && rawStream.getTracks().forEach(t => t.stop())
   sendStream && sendStream.getTracks().forEach(t => t.stop())
   ctx && ctx.close().catch(() => {})
-  ctx = gate = micSrc = rawStream = sendStream = null
+  ctx = gate = micSrc = rawStream = sendStream = monitor = null
+  setMonitor(false)
 }
 
 // ---------- Oda / P2P ----------
@@ -233,18 +242,39 @@ function attachStream(p, stream) {
     p.an.fftSize = 512
     p.buf = new Float32Array(p.an.fftSize)
     p.src.connect(p.an)
+    // %100 üstü yükseltme için Web Audio yolu
+    p.boost = ctx.createGain()
+    p.boost.gain.value = 0
+    p.src.connect(p.boost).connect(ctx.destination)
   }
+  applyVolume(p)
 }
 
+// Ses seviyesi: %100'e kadar normal oynatıcı (yankı önleme en iyi böyle çalışır),
+// %100 üstünde Web Audio kazancıyla yükseltme.
+const volOf = p => S.vols[p.name] ?? 100
 function applyVolume(p) {
   if (!p.audio) return
-  const v = S.vols[p.name] ?? 100
-  p.audio.volume = Math.max(0, Math.min(1, v / 100))
-  p.audio.muted = deaf
+  const eff = deaf ? 0 : (volOf(p) * S.master) / 100
+  const boosted = eff > 100 && p.boost
+  p.audio.muted = deaf || boosted
+  p.audio.volume = Math.max(0, Math.min(1, eff / 100))
+  if (p.boost) p.boost.gain.setTargetAtTime(boosted ? eff / 100 : 0, p.boost.context.currentTime, 0.02)
 }
 
 function applySink(el) {
   if (S.out && el.setSinkId) el.setSinkId(S.out).catch(() => {})
+}
+function applyCtxSink() {
+  if (ctx && ctx.setSinkId) ctx.setSinkId(S.out || '').catch(() => {})
+}
+
+let monitoring = false
+function setMonitor(on) {
+  monitoring = on
+  if (monitor) monitor.gain.setTargetAtTime(on ? 1 : 0, monitor.context.currentTime, 0.02)
+  const b = document.getElementById('monitor-btn')
+  if (b) { b.classList.toggle('on', on); b.textContent = on ? 'Dinlemeyi durdur' : 'Kendini dinle' }
 }
 
 function setBitrate(pc) {
@@ -383,7 +413,7 @@ function makeSeat(id, self) {
       <div class="seat-text"><div class="seat-name"></div><div class="seat-meta"></div></div>
       <span class="badge"></span>
     </div>
-    ${self ? '' : `<div class="vol-pop"><input class="pvol" type="range" min="0" max="100" step="5" aria-label="Ses seviyesi"><b class="vol-val"></b></div>`}`
+    ${self ? '' : `<div class="vol-pop"><svg class="vol-ico"><use href="#i-vol"/></svg><input class="pvol" type="range" min="0" max="200" step="5" aria-label="Ses seviyesi" title="Çift tıkla: %100"><b class="vol-val"></b></div>`}`
   $('circle').appendChild(el)
   return el
 }
@@ -416,15 +446,25 @@ function setRangeFill(r) {
   r.style.setProperty('--p', p + '%')
 }
 
+function showVol(p) {
+  const vol = p.el.querySelector('.pvol')
+  setRangeFill(vol)
+  const v = +vol.value
+  const lab = p.el.querySelector('.vol-val')
+  lab.textContent = '%' + v
+  p.el.classList.toggle('boosted', v > 100)
+}
+
 function renderPeer(p) {
   if (!p.el) {
     p.el = makeSeat(p.id, false)
     const vol = p.el.querySelector('.pvol')
-    vol.oninput = () => {
-      S.vols[p.name] = +vol.value; applyVolume(p); save()
-      setRangeFill(vol)
-      p.el.querySelector('.vol-val').textContent = vol.value + '%'
+    const setVol = v => {
+      S.vols[p.name] = v; vol.value = v; applyVolume(p); save()
+      showVol(p)
     }
+    vol.oninput = () => setVol(+vol.value)
+    vol.ondblclick = () => setVol(100)
     p.el.querySelector('.vol-pop').addEventListener('click', e => e.stopPropagation())
     p.el.addEventListener('click', e => {
       e.stopPropagation()
@@ -440,9 +480,8 @@ function renderPeer(p) {
   el.querySelector('.seat-name').textContent = p.name
   const vol = el.querySelector('.pvol')
   if (document.activeElement !== vol) {
-    vol.value = S.vols[p.name] ?? 100
-    setRangeFill(vol)
-    el.querySelector('.vol-val').textContent = vol.value + '%'
+    vol.value = volOf(p)
+    showVol(p)
   }
   const meta = el.querySelector('.seat-meta')
   if (p.ping != null) {
@@ -474,6 +513,7 @@ function updateControls() {
   $('ptt-hold').classList.toggle('hidden', S.mode !== 'ptt')
   $('ptt-hold').classList.toggle('on', pttDown)
   $('vad-wrap').classList.toggle('hidden', S.mode !== 'vad')
+  $('meter-thr').classList.toggle('hidden', S.mode !== 'vad')
   $('ptt-wrap').classList.toggle('hidden', S.mode !== 'ptt')
   document.querySelectorAll('#mode-seg button').forEach(b => b.classList.toggle('active', b.dataset.mode === S.mode))
   document.querySelectorAll('#quality-seg button').forEach(b => b.classList.toggle('active', +b.dataset.q === S.quality))
@@ -565,7 +605,22 @@ function initSettings() {
   $('in-gain').value = S.gain
   $('gain-val').textContent = S.gain
   $('quality').value = String(S.quality)
-  $('noise').checked = S.noise
+  for (const k of ['ec', 'ns', 'agc']) {
+    $(k).checked = S[k]
+    $(k).onchange = e => { S[k] = e.target.checked; save(); switchMic() }
+  }
+  $('lite').checked = S.lite
+  $('lite').onchange = e => { S.lite = e.target.checked; save(); document.body.classList.toggle('lite', S.lite) }
+  $('master').value = S.master
+  $('master-val').textContent = S.master
+  $('master').oninput = e => {
+    S.master = +e.target.value; $('master-val').textContent = S.master; save(); peers.forEach(applyVolume)
+  }
+  $('monitor-btn').onclick = () => {
+    if (!ctx) return toast('Mikrofon testi için önce bir odaya katıl')
+    setMonitor(!monitoring)
+    if (monitoring) toast('Kulaklık kullan, yoksa yankı olur')
+  }
   $('sounds').checked = S.sounds
   $('ptt-key').textContent = keyName(S.pttKey)
   for (const r of document.querySelectorAll('.sheet input[type=range]')) {
@@ -595,10 +650,9 @@ function initSettings() {
   $('threshold').oninput = e => { S.threshold = +e.target.value; $('thr-val').textContent = S.threshold; thrMark(); save(); pushGate() }
   $('in-gain').oninput = e => { S.gain = +e.target.value; $('gain-val').textContent = S.gain; save(); pushGate() }
   $('quality').onchange = e => { S.quality = +e.target.value; save(); tickStats() }
-  $('noise').onchange = e => { S.noise = e.target.checked; save(); switchMic() }
   $('sounds').onchange = e => { S.sounds = e.target.checked; save() }
   $('mic-select').onchange = e => { S.mic = e.target.value; save(); switchMic() }
-  $('out-select').onchange = e => { S.out = e.target.value; save(); peers.forEach(p => p.audio && applySink(p.audio)) }
+  $('out-select').onchange = e => { S.out = e.target.value; save(); peers.forEach(p => p.audio && applySink(p.audio)); applyCtxSink() }
   for (const k of ['turn-url', 'turn-user', 'turn-pass']) {
     $(k).onchange = () => {
       S.turnUrl = $('turn-url').value; S.turnUser = $('turn-user').value; S.turnPass = $('turn-pass').value; save()
@@ -750,6 +804,7 @@ window.addEventListener('beforeunload', () => { room && room.leave() })
 
 initLobby()
 initSettings()
+document.body.classList.toggle('lite', S.lite)
 updateControls()
 showScreen('lobby')
 initUpdates()

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Kamp Telsizi</title>
 <meta name="description" content="Arkadaşlarla oyun için hafif, düşük gecikmeli sesli sohbet">
-<meta name="theme-color" content="#0c0c0d">
+<meta name="theme-color" content="#000000">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="preload" href="fonts/plus-jakarta-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
@@ -13,8 +13,18 @@
 </head>
 <body>
 
+<!-- Arka plan: camın kırarak gösterdiği yumuşak ışıklar -->
+<div class="backdrop" aria-hidden="true"><i class="orb o1"></i><i class="orb o2"></i><i class="orb o3"></i><i class="grain"></i></div>
+
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
+    <!-- Sıvı cam kırılması (Chromium / WebView2) -->
+    <filter id="liquid" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.006 0.009" numOctaves="2" seed="4" result="noise"/>
+      <feGaussianBlur in="noise" stdDeviation="3" result="soft"/>
+      <feDisplacementMap in="SourceGraphic" in2="soft" scale="28" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <symbol id="i-vol" viewBox="0 0 24 24"><path d="M4 9.5v5h3.5L12 19V5L7.5 9.5H4Z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></symbol>
     <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 1 0-7 0v6A3.5 3.5 0 0 0 12 15Z"/><path d="M18.5 11.5a6.5 6.5 0 0 1-13 0M12 18v3"/></symbol>
     <symbol id="i-mic-off" viewBox="0 0 24 24"><path d="M15.5 10V5.5a3.5 3.5 0 0 0-6.6-1.6M8.5 8.5v3a3.5 3.5 0 0 0 5.9 2.6M18.5 11.5a6.4 6.4 0 0 1-.9 3.3M5.5 11.5a6.5 6.5 0 0 0 10.4 5.2M12 18v3M3 3l18 18"/></symbol>
     <symbol id="i-head" viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="5" height="7" rx="2"/><rect x="16" y="14" width="5" height="7" rx="2"/></symbol>
@@ -46,6 +56,7 @@
 
   <!-- GİRİŞ -->
   <section id="lobby" class="screen lobby">
+    <div class="glass lobby-card">
     <h1>Sesli sohbet,<br><span class="muted">oyun için.</span></h1>
 
     <form class="form" onsubmit="return false">
@@ -64,12 +75,13 @@
       <p id="lobby-err" class="err"></p>
     </form>
 
+    </div>
     <p class="note">Aynı kodu yazan herkes aynı odaya girer. Kod, odanın şifresidir.</p>
   </section>
 
   <!-- ODA -->
   <section id="call" class="screen hidden">
-    <div class="room-head">
+    <div class="room-head glass">
       <div class="room-info">
         <div class="room-name" id="room-label"></div>
         <div class="status"><span class="live-dot" id="live-dot"></span><span id="status">Bağlanıyor…</span></div>
@@ -77,10 +89,12 @@
       <button id="copy-link" class="icon-btn" title="Davet linkini kopyala"><svg><use href="#i-link"/></svg></button>
     </div>
 
-    <div class="list" id="circle"></div>
-    <p class="alone" id="alone">Henüz kimse yok. Davet linkini paylaş.</p>
+    <div class="glass list-card">
+      <div class="list" id="circle"></div>
+      <p class="alone" id="alone">Henüz kimse yok. Davet linkini paylaş.</p>
+    </div>
 
-    <nav class="dock">
+    <nav class="dock glass">
       <button id="mute" class="dock-btn" title="Mikrofonu kapat (M)">
         <svg class="on-ico"><use href="#i-mic"/></svg><svg class="off-ico"><use href="#i-mic-off"/></svg>
       </button>
@@ -102,7 +116,7 @@
 <!-- AYARLAR -->
 <div id="settings" class="sheet hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
   <div class="sheet-backdrop" data-close></div>
-  <div class="sheet-panel">
+  <div class="sheet-panel glass">
     <div class="sheet-head">
       <h2 id="settings-title">Ayarlar</h2>
       <button class="icon-btn" data-close title="Kapat"><svg><use href="#i-x"/></svg></button>
@@ -113,10 +127,19 @@
         <h3>Aygıtlar</h3>
         <label class="field"><span class="field-label">Mikrofon</span><select id="mic-select"></select></label>
         <label class="field" id="out-wrap"><span class="field-label">Çıkış</span><select id="out-select"></select></label>
+      </section>
+
+      <section class="group">
+        <h3>Mikrofon</h3>
+        <div class="meter" id="meter"><div id="meter-bar"></div><div id="meter-thr"></div></div>
         <label class="field">
-          <span class="field-label">Mikrofon kazancı <b><span id="gain-val"></span>%</b></span>
+          <span class="field-label">Kazanç <b><span id="gain-val"></span>%</b></span>
           <input type="range" id="in-gain" min="50" max="300" step="10">
         </label>
+        <label class="switch"><span>Gürültü engelleme<small>Klavye, fan, arka plan sesi</small></span><input type="checkbox" id="ns"><span class="track"></span></label>
+        <label class="switch"><span>Yankı önleme<small>Hoparlör kullanıyorsan açık kalsın</small></span><input type="checkbox" id="ec"><span class="track"></span></label>
+        <label class="switch"><span>Otomatik kazanç<small>Sesini otomatik dengeler</small></span><input type="checkbox" id="agc"><span class="track"></span></label>
+        <button id="monitor-btn" class="ghost-btn" type="button">Kendini dinle</button>
       </section>
 
       <section class="group">
@@ -134,11 +157,10 @@
 
         <div id="vad-wrap">
           <label class="field">
-            <span class="field-label">Eşik <b><span id="thr-val"></span> dB</b></span>
+            <span class="field-label">Algılama eşiği <b><span id="thr-val"></span> dB</b></span>
             <input type="range" id="threshold" min="-80" max="-10" step="1">
           </label>
-          <div class="meter"><div id="meter-bar"></div><div id="meter-thr"></div></div>
-          <p class="hint">Çubuk çizgiyi geçince sesin gider. Arka plan sesi gidiyorsa eşiği sağa çek.</p>
+          <p class="hint">Mikrofon çubuğu beyaz çizgiyi geçince sesin gider. Arka plan sesi gidiyorsa eşiği sağa çek.</p>
         </div>
 
         <div id="ptt-wrap" class="hidden">
@@ -148,6 +170,16 @@
           </div>
           <p class="hint" id="ptt-hint">Tarayıcıda, oyun penceresi öndeyken tuş algılanamaz. Oyunda “Sesle aktif” modunu ya da Windows uygulamasını kullan.</p>
         </div>
+      </section>
+
+      <section class="group">
+        <h3>Ses</h3>
+        <label class="field">
+          <span class="field-label">Genel ses <b><span id="master-val"></span>%</b></span>
+          <input type="range" id="master" min="0" max="200" step="5">
+        </label>
+        <p class="hint">Kişi başı ses için listede birinin üstüne tıkla. %100 üstü yükseltmedir.</p>
+        <label class="switch"><span>Giriş / çıkış sesleri</span><input type="checkbox" id="sounds"><span class="track"></span></label>
       </section>
 
       <section class="group">
@@ -161,12 +193,7 @@
           <option value="12000">12</option><option value="24000">24</option><option value="40000">40</option>
         </select>
         <p class="hint">Normal ayarda saatte kişi başı ~11 MB.</p>
-      </section>
-
-      <section class="group">
-        <h3>Diğer</h3>
-        <label class="switch"><span>Gürültü engelleme</span><input type="checkbox" id="noise"><span class="track"></span></label>
-        <label class="switch"><span>Giriş / çıkış sesleri</span><input type="checkbox" id="sounds"><span class="track"></span></label>
+        <label class="switch"><span>Performans modu<small>Cam efektini kapatır, oyunda ekran kartını yormaz</small></span><input type="checkbox" id="lite"><span class="track"></span></label>
       </section>
 
       <details class="group adv">
