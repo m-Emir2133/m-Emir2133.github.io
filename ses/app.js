@@ -68,7 +68,8 @@ async function join() {
     return
   }
   history.replaceState(null, '', '#oda=' + encodeURIComponent(code))
-  startRoom(code)
+  setJoinText('Bağlanıyor…')
+  await startRoom(code)
   syncPttKey()
   showScreen('call')
   $('room-label').textContent = code
@@ -147,14 +148,36 @@ function stopAudio() {
 }
 
 // ---------- Oda / P2P ----------
-function startRoom(code) {
+// Varsayılan TURN (Metered ücretsiz plan): doğrudan bağlantı kurulamayan ağlarda
+// (yurt/kampüs, mobil hat, CGNAT) ses bu sunucu üzerinden aktarılır.
+const METERED_URL = 'https://kamptelsizi.metered.live/api/v1/turn/credentials?apiKey=4e1a58f5f6e4e9d1548aaae73ec8a2e0573f'
+let meteredCache = null
+async function defaultTurn() {
+  if (meteredCache && Date.now() - meteredCache.t < 3600e3) return meteredCache.list
+  try {
+    const ctl = new AbortController()
+    const tm = setTimeout(() => ctl.abort(), 4000)
+    const r = await fetch(METERED_URL, { signal: ctl.signal })
+    clearTimeout(tm)
+    const list = (await r.json()).filter(s => s && s.username && /^turns?:/.test([].concat(s.urls)[0]))
+    meteredCache = { t: Date.now(), list }
+    return list
+  } catch (e) {
+    console.warn('TURN bilgisi alınamadı', e)
+    return []
+  }
+}
+
+async function startRoom(code) {
   const cfg = { appId: APP_ID, password: 'kt:' + code, identity: 'none' }
   // İsteğe bağlı: kendi eşleştirme (nostr) sunucunu kullan — ör. ?relay=wss://sunucu.com
   const relay = new URLSearchParams(location.search).get('relay')
   if (relay) cfg.relayConfig = { urls: relay.split(',') }
+  const turn = await defaultTurn()
   if (S.turnUrl.trim()) {
-    cfg.turnConfig = [{ urls: S.turnUrl.trim(), username: S.turnUser || undefined, credential: S.turnPass || undefined }]
+    turn.unshift({ urls: S.turnUrl.trim(), username: S.turnUser || undefined, credential: S.turnPass || undefined })
   }
+  if (turn.length) cfg.turnConfig = turn
   room = joinRoom(cfg, code)
   info = room.makeAction('info')
 
